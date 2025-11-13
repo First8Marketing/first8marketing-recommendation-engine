@@ -76,7 +76,7 @@ class Recommendation_Engine_WP_Connect {
 		// Feature detection and commerce abstraction
 		require_once RECENGINE_WP_PLUGIN_DIR . 'includes/class-feature-detector.php';
 		require_once RECENGINE_WP_PLUGIN_DIR . 'includes/class-commerce-integration-interface.php';
-		require_once RECENGINE_WP_PLUGIN_DIR . 'includes/class-commerce-integ极速赛车开奖直播历史记录-factory.php';
+		require_once RECENGINE_WP_PLUGIN_DIR . 'includes/class-commerce-integration-factory.php';
 
 		// If-So feature parity classes.
 		require_once RECENGINE_WP_PLUGIN_DIR . 'includes/class-triggers.php';

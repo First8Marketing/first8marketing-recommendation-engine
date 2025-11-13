@@ -341,7 +341,7 @@ class RecEngine_WooCommerce_Integration implements RecEngine_Commerce_Integratio
 		);
 
 		// Track via Umami if available
-		if ( class_exists( 'Umami_Tracker' ) {
+		if ( class_exists( 'Umami_Tracker' ) ) {
 			Umami_Tracker::get_instance()->track_event( 'purchase', $event_data );
 		}
 
@@ -384,11 +384,8 @@ class RecEngine_WooCommerce_Integration implements RecEngine_Commerce_Integratio
 	 * @return array
 	 */
 	private function get_recently_viewed_products() {
-		$viewed_products = ! empty( $_COOKIE['woocommerce_recently_viewed'] ) ? 
-			(array) explode( '|', wp_unslash( $_COOKIE['woocommerce_recently_viewed'] ) ) : 
-			array();
-
-		return array_filter( $viewed_products );
+		// Use WooCommerce's internal function for sanitized retrieval.
+		return wc_get_recently_viewed();
 	}
 
 	/**

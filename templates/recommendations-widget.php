@@ -12,7 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 <?php
 // Get commerce integration instance
-$commerce_integration = RecEngine_Commerce_Integration_Factory::get_instance()->get_integration();
+$recengine_commerce_integration = RecEngine_Commerce_Integration_Factory::get_instance()->get_integration();
 ?>
 
 <div class="recengine-recommendations-widget recengine-layout-<?php echo esc_attr( $args['layout'] ); ?>">
