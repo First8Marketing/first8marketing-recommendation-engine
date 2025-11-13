@@ -65,7 +65,7 @@ class RecEngine_SSO_Client {
 	private function init_hooks() {
 		add_action( 'init', array( $this, 'handle_sso_callback' ) );
 		add_action( 'wp_ajax_recengine_sso_login', array( $this, 'handle_ajax_login' ) );
-		add_action( 'wp_ajax_nopriv_recengine_sso_login', array( $this极, 'handle_ajax_login' ) );
+		add_action( 'wp_ajax_nopriv_recengine_sso_login', array( $this, 'handle_ajax_login' ) );
 		add_filter( 'authenticate', array( $this, 'sso_authentication' ), 10, 3 );
 		add_action( 'wp_logout', array( $this, 'handle_logout' ) );
 		add_action( 'admin_menu', array( $this, 'add_sso_callback_page' ) );
@@ -92,21 +92,21 @@ class RecEngine_SSO_Client {
 		$tokens = $this->exchange_code_for_tokens( $code );
 
 		if ( is_wp_error( $tokens ) ) {
-			wp_die( $tokens->get_error_message(), 'SSO Error', array( 'response' => 400 ) );
+			wp_die( esc_html( $tokens->get_error_message() ), 'SSO Error', array( 'response' => 400 ) );
 		}
 
 		// Validate and decode ID token
 		$user_info = $this->validate_id_token( $tokens['id_token'] );
 
 		if ( is_wp_error( $user_info ) ) {
-			wp_die( $user_info->get_error_message(), 'SSO Error', array( 'response' => 400 ) );
+			wp_die( esc_html( $user_info->get_error_message() ), 'SSO Error', array( 'response' => 400 ) );
 		}
 
 		// Find or create WordPress user
 		$user = $this->find_or_create_user( $user_info );
 
 		if ( is_wp_error( $user ) ) {
-			wp_die( $user->get_error_message(), 'SSO Error', array( 'response' => 400 ) );
+			wp_die( esc_html( $user->get_error_message() ), 'SSO Error', array( 'response' => 400 ) );
 		}
 
 		// Log the user in
@@ -160,10 +160,10 @@ class RecEngine_SSO_Client {
 			$this->sso_config['issuer'] . '/token',
 			array(
 				'body' => array(
-					'grant_type'    => 'authorization_code',
-					'code'          => $code,
+					'grant_type'   => 'authorization_code',
+					'code'         => $code,
 					'redirect_uri' => $this->sso_config['redirect_uri'],
-					'client_id'     => $this->sso_config['client_id'],
+					'client_id'    => $this->sso_config['client_id'],
 				),
 			)
 		);
@@ -179,8 +179,8 @@ class RecEngine_SSO_Client {
 		}
 
 		return array(
-			'access_token' => $body['access_token'],
-			'id_token'     => $body['id_token'],
+			'access_token'  => $body['access_token'],
+			'id_token'      => $body['id_token'],
 			'refresh_token' => isset( $body['refresh_token'] ) ? $body['refresh_token'] : null,
 		);
 	}
@@ -232,61 +232,51 @@ class RecEngine_SSO_Client {
 	 * @return WP_User|WP_Error WordPress user or error
 	 */
 	private function find_or_create_user( $user_info ) {
-		$user_id = isset( $user_info['sub'] ) ? $user_info['sub'] : '';
-		$email   = isset( $user_info['email'] ) ? sanitize_email( $user_info['email'] ) : '';
-		$name    = isset( $user_info['name'] ) ? sanitize_text_field( $user_info['name'] ) : '';
+		$sso_user_id = isset( $user_info['sub'] ) ? $user_info['sub'] : '';
+		$email       = isset( $user_info['email'] ) ? sanitize_email( $user_info['email'] ) : '';
+		$name        = isset( $user_info['name'] ) ? sanitize_text_field( $user_info['name'] ) : '';
 
 		if ( empty( $email ) ) {
 			return new WP_Error( 'no_email', 'Email address is required' );
 		}
 
-		// Try to find user by SSO user ID
-		$user = get_users(
-			array(
-				'meta_key'   => 'recengine_sso_user_id',
-				'meta_value' => $user_id,
-				'number'     => 1,
-			)
-		);
-
-		if ( ! empty( $user ) ) {
-			return $user[0];
-		}
-
-		// Try to find user by email
+		// Try to find user by email first (indexed lookup, much faster)
 		$user = get_user_by( 'email', $email );
+		
 		if ( $user ) {
-			// Link existing user with SSO
-			update_user_meta( $user->ID, 'recengine_sso_user_id', $user_id );
+			// Check if user already has SSO ID linked
+			$existing_sso_id = get_user_meta( $user->ID, 'recengine_sso_user_id', true );
+			
+			// Link or verify SSO user ID
+			if ( empty( $existing_sso_id ) ) {
+				update_user_meta( $user->ID, 'recengine_sso_user_id', $sso_user_id );
+			} elseif ( $existing_sso_id !== $sso_user_id ) {
+				// SSO ID mismatch - possible security issue
+				return new WP_Error( 'sso_mismatch', 'Email is already associated with a different SSO account' );
+			}
+			
 			return $user;
 		}
 
-		// Create new user
+		// Create new user if not found
 		$username = $this->generate_username( $email, $name );
-		$password  = wp_generate_password( 24, true, true );
+		$password = wp_generate_password( 24, true, true );
 
-		$user_id = wp_create_user(
-			$username,
-			$password,
-			$email
-		);
-		
-		if ( ! is_wp_error( $user_id ) ) {
-			// Update user meta with additional information
-			if ( isset( $user_info['given_name'] ) ) {
-				update_user_meta( $user_id, 'first_name', sanitize_text_field( $user_info['given_name'] ) );
-			}
-			if ( isset( $user_info['family_name'] ) ) {
-				update_user_meta( $user_id, 'last_name', sanitize_text_field( $user_info['family_name'] ) );
-			}
-		}
+		$user_id = wp_create_user( $username, $password, $email );
 
 		if ( is_wp_error( $user_id ) ) {
 			return $user_id;
 		}
 
-		// Add SSO user ID meta
-		update_user_meta( $user_id, 'recengine_sso_user_id', $user_id );
+		// Update user meta with additional information
+		update_user_meta( $user_id, 'recengine_sso_user_id', $sso_user_id );
+		
+		if ( isset( $user_info['given_name'] ) ) {
+			update_user_meta( $user_id, 'first_name', sanitize_text_field( $user_info['given_name'] ) );
+		}
+		if ( isset( $user_info['family_name'] ) ) {
+			update_user_meta( $user_id, 'last_name', sanitize_text_field( $user_info['family_name'] ) );
+		}
 
 		return get_user_by( 'id', $user_id );
 	}
@@ -299,86 +289,86 @@ class RecEngine_SSO_Client {
 	 * @return string Username
 	 */
 	private function generate_username( $email, $name ) {
-	 // Try to use the part before @ in email
-	 $username = strstr( $email, '@', true );
-	 
-	 // If that doesn't work, use a sanitized version of the name
-	 if ( empty( $username ) || username_exists( $username ) ) {
-	 $username = sanitize_user( str_replace( ' ', '', $name ), true );
-	 }
+		// Try to use the part before @ in email
+		$username = strstr( $email, '@', true );
+		
+		// If that doesn't work, use a sanitized version of the name
+		if ( empty( $username ) || username_exists( $username ) ) {
+			$username = sanitize_user( str_replace( ' ', '', $name ), true );
+		}
 
-	 // If still empty or exists, generate a random username
-	 if ( empty( $username ) || username_exists( $username ) ) {
-	 	$username = 'user_' . wp_generate_password( 8, false, false );
-	 }
+		// If still empty or exists, generate a random username
+		if ( empty( $username ) || username_exists( $username ) ) {
+			$username = 'user_' . wp_generate_password( 8, false, false );
+		}
 
-	 // Ensure uniqueness
-	 $counter = 1;
-	 $original_username = $username;
-	 while ( username_exists( $username ) ) {
-	 	$username = $original_username . $counter;
-	 	$counter++;
-	 }
+		// Ensure uniqueness
+		$counter           = 1;
+		$original_username = $username;
+		while ( username_exists( $username ) ) {
+			$username = $original_username . $counter;
+			$counter++;
+		}
 
-	 return $username;
+		return $username;
 	}
 
 	/**
 	 * SSO authentication filter
 	 *
 	 * @param WP_User|WP_Error|null $user User object or error
-	 * @param string $username Username
-	 * @param string $password Password
+	 * @param string                $username Username
+	 * @param string                $password Password
 	 * @return WP_User|WP_Error|null
 	 */
 	public function sso_authentication( $user, $username, $password ) {
-	 // Only handle SSO authentication if password is empty (SSO flow)
-	 if ( ! empty( $password ) ) {
-	 	return $user;
-	 }
+		// Only handle SSO authentication if password is empty (SSO flow)
+		if ( ! empty( $password ) ) {
+			return $user;
+		}
 
-	 // Check if this is an SSO authentication attempt
-	 if ( ! isset( $_POST['sso_auth'] ) || 'true' !== $_POST['sso_auth'] ) {
-	 	return $user;
-	 }
+		// Check if this is an SSO authentication attempt with nonce verification
+		if ( ! isset( $_POST['sso_auth'] ) || 'true' !== $_POST['sso_auth'] || ! isset( $_POST['sso_nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['sso_nonce'] ) ), 'recengine_sso_auth' ) ) {
+			return $user;
+		}
 
-	 // This would be handled by the callback flow instead
-	 return new WP_Error( 'sso_redirect', 'Redirecting to SSO provider...' );
+		// This would be handled by the callback flow instead
+		return new WP_Error( 'sso_redirect', 'Redirecting to SSO provider...' );
 	}
 
 	/**
 	 * Handle logout
 	 */
 	public function handle_logout() {
-	 // Clear any SSO-specific session data
-	 if ( isset( $_COOKIE['recengine_sso_token'] ) ) {
-	 	setcookie( 'recengine_sso_token', '', time() - 3600, COOKIEPATH, COOKIE_DOMAIN, is_ssl(), true );
-	 }
+		// Clear any SSO-specific session data
+		if ( isset( $_COOKIE['recengine_sso_token'] ) ) {
+			setcookie( 'recengine_sso_token', '', time() - 3600, COOKIEPATH, COOKIE_DOMAIN, is_ssl(), true );
+		}
 	}
 
 	/**
 	 * Add SSO callback admin page
 	 */
 	public function add_sso_callback_page() {
-	 add_submenu_page(
-	 	null, // No parent menu
-	 	'SSO Callback',
-	 	'SSO Callback',
-	 	'read',
-	 	'recengine-sso-callback',
-	 	array( $this, 'render_sso_callback_page' )
-	 );
+		add_submenu_page(
+			null, // No parent menu
+			'SSO Callback',
+			'SSO Callback',
+			'read',
+			'recengine-sso-callback',
+			array( $this, 'render_sso_callback_page' )
+		);
 	}
 
 	/**
 	 * Render SSO callback page
 	 */
 	public function render_sso_callback_page() {
-	 // This page should not be accessed directly - it's for processing the OAuth callback
-	 // The actual processing happens in handle_sso_callback() via init hook
-	 echo '<div class="wrap">';
-	 echo '<h1>SSO Authentication</h1>';
-	 echo '<p>Processing Single Sign-On authentication...</p>';
-	 echo '</div>';
+		// This page should not be accessed directly - it's for processing the OAuth callback
+		// The actual processing happens in handle_sso_callback() via init hook
+		echo '<div class="wrap">';
+		echo '<h1>SSO Authentication</h1>';
+		echo '<p>Processing Single Sign-On authentication...</p>';
+		echo '</div>';
 	}
 }

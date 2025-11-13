@@ -71,6 +71,7 @@ class Recommendation_Engine_WP_Connect {
 		require_once RECENGINE_WP_PLUGIN_DIR . 'includes/class-personalization.php';
 		require_once RECENGINE_WP_PLUGIN_DIR . 'includes/class-admin.php';
 		require_once RECENGINE_WP_PLUGIN_DIR . 'includes/class-shortcodes.php';
+		require_once RECENGINE_WP_PLUGIN_DIR . 'includes/class-sso-client.php';
 
 		// If-So feature parity classes.
 		require_once RECENGINE_WP_PLUGIN_DIR . 'includes/class-triggers.php';
